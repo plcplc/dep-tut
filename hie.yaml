@@ -1,0 +1,16 @@
+cradle:
+  cabal:
+    - path: "src/"
+      component: "lib:dep-tut"
+
+    - path: "src-tests/"
+      component: "dep-tut:test:tests"
+
+    - path: "src-exe/"
+      component: "dep-tut:exe:dep-tut"
+
+    - path: "src-ubik-exe/"
+      component: "dep-tut:exe:ubik"
+
+    - path: "src-mala-exe/"
+      component: "dep-tut:exe:mala"

@@ -1,0 +1,7 @@
+-- Extensions, mirroring cabal file
+:set -XOverloadedStrings
+
+-- Change imports if you're working on tests or the main exe
+:set -isrc
+-- :set -isrc-exe
+:set -isrc-tests
