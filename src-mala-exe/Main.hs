@@ -1,4 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE DataKinds #-}
@@ -20,9 +21,11 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-name-shadowing #-}
+{-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
 
+import Control.Monad.Trans
 import Codec.Serialise
 import Control.Monad
 import Control.Monad.Fix
@@ -115,6 +118,68 @@ type Sigh t m =
     HasFocusReader t m,
     HasTheme t m
   )
+{-
+
+Mikado: Supporting different AST layouts
+        |
+          Dynamic toggle for vertical mode in a node triggered on key input (e.g. via F1)
+        | |
+        |   Static toggle for vertical mode
+        |
+          Use bounding boxes (w*h) instead of just widths
+        | |
+        |   allocate regions using both width and height
+        | |
+        | ✓ Pass around bounding boxes instead of widths
+        | |
+        | ✓ Define boxes with horiz and vert compositions
+        |
+        ✓ Separate out widths from TNE in 'hcfor'
+
+
+Examples:
+
+  λ(x)(λ(y)(λ(z)($(x)($(y)(z)))))
+
+  λ(x)(λ(y)(λ
+             (z)
+             ($(x)($(y)(z)))
+           )
+      )
+
+  λ(x)(λ(y)
+        (λ(z)
+          ($(x)($(y)(z)))
+        )
+      )
+
+  λ(x)
+   (λ(y)
+     (λ(z)
+       ($(x)($(y)(z)))
+     )
+   )
+
+  λ(x)
+   (λ(y)
+     (λ(z)
+       ($(x)
+         ($(y)(z))
+       )
+     )
+   )
+
+  λ(x)
+   (λ(y)
+     (λ(z)
+       ($(x)
+         ($(y)
+           (z)
+         )
+       )
+     )
+   )
+   -}
 
 -- Generic term editor
 
@@ -139,23 +204,33 @@ data TermNodeEditor t term = TermNodeEditor
     tnePunchHoleEv :: Event t (),
     tneFocusId :: Dynamic t (Maybe FocusId),
     tneValue :: Dynamic t term,
-    tneWidth :: Dynamic t Int
+    tneBoundingBox :: Dynamic t BoundingBox
   }
+
+data BoundingBox = BoundingBox { bbWidth :: Int, bbHeight :: Int }
+
+newtype Vertically a = Vertically { getVertically :: a }
+
+instance Semigroup (Vertically BoundingBox) where
+  Vertically bb1 <> Vertically bb2 = Vertically BoundingBox { bbWidth = max (bbWidth bb1) (bbWidth bb2),
+                             bbHeight = bbHeight bb1 + bbHeight bb2
+                             }
+
+instance Monoid (Vertically BoundingBox) where
+  mempty = Vertically (BoundingBox 0 0)
+
+newtype Horizontally a = Horizontally { getHorizontally :: a }
+
+instance Semigroup (Horizontally BoundingBox) where
+  Horizontally bb1 <> Horizontally bb2 = Horizontally BoundingBox { bbHeight = max (bbHeight bb1) (bbHeight bb2),
+                             bbWidth = bbWidth bb1 + bbWidth bb2
+                             }
+
+instance Monoid (Horizontally BoundingBox) where
+  mempty = Horizontally (BoundingBox 0 0)
 
 instance Reflex t => Functor (TermNodeEditor t) where
   fmap f (TermNodeEditor {..}) = TermNodeEditor {tneReplaceTermEv = fmap f tneReplaceTermEv, tneValue = fmap f tneValue, ..}
-
--- Perhaps TermNodeEditor is not quite the right thing to have an Applicative for..
-instance Reflex t => Applicative (TermNodeEditor t) where
-  pure x = TermNodeEditor never never (pure Nothing) (pure x) 0
-
-  tneF <*> tneX =
-    TermNodeEditor
-      never {-??-}
-      never {-??-}
-      (tneFocusId tneF)
-      (tneValue tneF <*> tneValue tneX)
-      (tneWidth tneF + tneWidth tneX)
 
 switchTermNodeEditor :: (Reflex t) => Dynamic t (TermNodeEditor t term) -> TermNodeEditor t term
 switchTermNodeEditor dynTNE =
@@ -164,7 +239,7 @@ switchTermNodeEditor dynTNE =
       tnePunchHoleEv = switchDyn (tnePunchHoleEv <$> dynTNE),
       tneFocusId = join (tneFocusId <$> dynTNE),
       tneValue = join (tneValue <$> dynTNE),
-      tneWidth = join (tneWidth <$> dynTNE)
+      tneBoundingBox = join (tneBoundingBox <$> dynTNE)
     }
 
 data (:+:) f g a = InL (f a) | InR (g a)
@@ -173,6 +248,11 @@ deriving instance (Show (f a), Show (g a)) => Show ((:+:) f g a)
 
 data Hole f = Hole
   deriving (Show)
+
+bbGrout :: (Sigh t m ) => Dynamic t BoundingBox -> m a -> m a
+bbGrout bbDyn ui = do
+  row $ grout (fixed (bbHeight <$> bbDyn)) $
+    col $ grout (fixed (bbWidth <$> bbDyn)) ui
 
 termExpressionEditorMain ::
   forall t m term.
@@ -190,7 +270,7 @@ termExpressionEditorMain initialTerm = do
             box
               (pure singleBoxStyle)
               ( mdo
-                  tne <- row $ grout (fixed (tneWidth tne)) (nodeEditor initialTerm)
+                  tne <- bbGrout (tneBoundingBox tne) (nodeEditor initialTerm)
                   return tne
               )
         return (tneValue termDyn)
@@ -255,7 +335,8 @@ instance TermExpressionEditor Text where
     -- isFocusedDyn <- isFocused focusId
     let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> isCursorAtEnd -- ((&&) <$> isFocusedDyn <*> isCursorAtEnd)
     let widthDyn = focusedWidthDyn + (T.length <$> _textInput_value textRes)
-    return $ TermNodeEditor never never (pure (Just focusId)) (_textInput_value textRes) widthDyn
+    let bbDyn = (\w -> BoundingBox { bbHeight = 1, bbWidth = w }) <$> widthDyn
+    return $ TermNodeEditor never never (pure (Just focusId)) (_textInput_value textRes) bbDyn
 
 instance
   ( HoleFill (term (Fix (Hole :+: term))),
@@ -275,7 +356,7 @@ instance
         m (TermNodeEditor t (Fix (Hole :+: term))) ->
         m (TermNodeEditor t (Fix (Hole :+: term)))
       updateableEditor editorAction = mdo
-        tne <- grout (fixed (tneWidth tne)) $ mdo
+        tne <- grout (fixed (bbWidth <$> tneBoundingBox tne)) $ mdo
           tneDyn <- networkHold @t @m editorAction updateEditorEv
           let tne = switchTermNodeEditor tneDyn
           let replaceEv = tneReplaceTermEv tne
@@ -339,25 +420,31 @@ instance
                           False -> V.defAttr `V.withForeColor` V.srgbColor 230 230 (230 :: Int)
                   richText (RichTextConfig (current nodeStyle)) $ pure (T.singleton c)
                
-              argEditor :: forall term. TermExpressionEditor term => term -> m (TermNodeEditor t term)
+              argEditor :: forall term. TermExpressionEditor term => term -> DynamicWriterT t [BoundingBox] m (Dynamic t term)
               argEditor term = do
-                charWhenFocused '('
-                TermNodeEditor{..} <- nodeEditor term
-                charWhenFocused ')'
-                return TermNodeEditor{tneWidth = 2 + tneWidth, ..}
+                lift $ charWhenFocused '('
+                TermNodeEditor{tneBoundingBox, tneValue} <- lift $ nodeEditor term
+                lift $ charWhenFocused ')'
+                let bbDyn = do
+                        bb <- tneBoundingBox 
+                        return [ getHorizontally $ mconcat $ map Horizontally [bb, BoundingBox { bbHeight =1, bbWidth = 2 }]]
+                tellDyn bbDyn
+                return tneValue
                 
-              argEditors' = unComp $ hcfor (Proxy @TermExpressionEditor) args (\(I arg) -> Comp (argEditor arg))
-          argEditors <- argEditors'
+          (argValuesDyn, argWidthsDyn) <- runDynamicWriterT $ unComp $ hcfor (Proxy @TermExpressionEditor) args (\(I arg) -> Comp (argEditor arg))
 
-          let widthDyn = (pure $ T.length title) + tneWidth argEditors
+          let widthDyn = do
+                bbs <- map Horizontally <$> argWidthsDyn
+                let titleBB = Horizontally BoundingBox { bbHeight = 1 , bbWidth = T.length title}
+                pure $ getHorizontally $ mconcat $ (titleBB : bbs)
 
           return $
             TermNodeEditor
               { tneReplaceTermEv = never,
                 tnePunchHoleEv = punchHoleEv,
                 tneFocusId = pure (Just focusId),
-                tneValue = SOP . Z <$> tneValue argEditors,
-                tneWidth = widthDyn
+                tneValue = SOP . Z <$> argValuesDyn,
+                tneBoundingBox = widthDyn
               }
 
       holeEditor :: forall t m. (Sigh t m, HasLayout t m, HasFocus t m) => m (TermNodeEditor t (Fix (Hole :+: term)))
@@ -381,7 +468,9 @@ instance
           let replaceEv = fforMaybe (updated $ _textInput_value textRes) holeFill
           return (focusId, replaceEv, 1+textWidthDyn)
 
-        return $ TermNodeEditor (fmap (Fix . InR) replaceEv) never (pure (Just focusId)) (pure $ Fix (InL Hole)) widthDyn
+        let bbDyn = (\w -> BoundingBox {bbHeight = 1, bbWidth = w}) <$> widthDyn
+
+        return $ TermNodeEditor (fmap (Fix . InR) replaceEv) never (pure (Just focusId)) (pure $ Fix (InL Hole)) bbDyn
 
 -- * Term editor specialized to Dep-tut
 
