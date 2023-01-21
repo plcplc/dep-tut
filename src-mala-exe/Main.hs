@@ -20,7 +20,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -Wno-name-shadowing #-}
+-- {-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
@@ -204,10 +204,32 @@ data TermNodeEditor t term = TermNodeEditor
     tnePunchHoleEv :: Event t (),
     tneFocusId :: Dynamic t (Maybe FocusId),
     tneValue :: Dynamic t term,
-    tneBoundingBox :: Dynamic t BoundingBox
+    tneBoundingBox :: Dynamic t Boxes
   }
 
 data BoundingBox = BoundingBox { bbWidth :: Int, bbHeight :: Int }
+  deriving (Eq)
+
+instance Show BoundingBox where
+  show BoundingBox{..} = show bbWidth <> "x" <> show bbHeight
+
+data Boxes = BoxesHorizontally String [Boxes] | BoxesVertically String [Boxes] | BoxesLeaf String BoundingBox
+
+instance Show Boxes where
+  show (BoxesLeaf tag_ b) = show b <> " (" <> tag_ <> ")"
+  show b@(BoxesHorizontally tag_ bs) = unlines (("Horizontally(" ++ show (computeBoxes b) ++ "), " <> tag_ <> ":"): concatMap (map ("  " ++) . lines . show) bs)
+  show b@(BoxesVertically tag_ bs) = unlines (("Vertically:" ++ show (computeBoxes b) ++ "), " <> tag_ <> ":"): concatMap (map ("  " <>) . lines . show) bs)
+
+computeBoxes :: Boxes -> BoundingBox
+computeBoxes (BoxesLeaf _ bb) = bb
+computeBoxes (BoxesHorizontally _ bbs) = horizontally $ map computeBoxes bbs
+computeBoxes (BoxesVertically _ bbs) = vertically $ map computeBoxes bbs
+
+vertically :: [BoundingBox] -> BoundingBox
+vertically = getVertically . mconcat . map Vertically
+
+horizontally :: [BoundingBox] -> BoundingBox
+horizontally = getHorizontally . mconcat . map Horizontally
 
 newtype Vertically a = Vertically { getVertically :: a }
 
@@ -249,28 +271,130 @@ deriving instance (Show (f a), Show (g a)) => Show ((:+:) f g a)
 data Hole f = Hole
   deriving (Show)
 
-bbGrout :: (Sigh t m ) => Dynamic t BoundingBox -> m a -> m a
-bbGrout bbDyn ui = do
-  row $ grout (fixed (bbHeight <$> bbDyn)) $
-    col $ grout (fixed (bbWidth <$> bbDyn)) ui
+bbGrout' :: forall t m a. (Sigh t m ) => Char -> Dynamic t BoundingBox -> m a -> m a
+bbGrout' c bbDyn ui = do
+  -- o <- askOrientation
+  -- grout (fixed (boxEdge <$> o <*> bbDyn)) $ axis (flipOrientation <$> o) flex $ grout (fixed (boxEdge . flipOrientation <$> o <*> bbDyn)) $ axis o flex (fill (pure c) >> ui)
+  --
+  -- assumes already in 'row' axis.
+  grout (fixed $ bbHeight <$> bbDyn) $ row $ grout (fixed $ bbWidth <$> bbDyn) $ {-fill (pure c) >>-} ui
+
+-- Phew. This was more complicated than I thought it would be..
+bbGrout :: forall t m a. (Sigh t m ) => Char -> Dynamic t BoundingBox -> m a -> m a
+bbGrout c bbDyn ui = do
+  -- o <- askOrientation
+  -- grout (fixed (boxEdge <$> o <*> bbDyn)) $ axis (flipOrientation <$> o) flex $ grout (fixed (boxEdge . flipOrientation <$> o <*> bbDyn)) $ axis o flex (fill (pure c) >> ui)
+  --
+  -- assumes already in 'row' axis.
+  grout (fixed $ bbWidth <$> bbDyn) $ col $ grout (fixed $ bbHeight <$> bbDyn) $ row $ {-fill (pure c) >>-} ui
+
+{-
+  where
+
+    boxEdge :: Orientation -> BoundingBox -> Int
+    boxEdge o bb =
+      case o of
+        Orientation_Row -> bbWidth bb
+        Orientation_Column -> bbHeight bb
+        -}
+
+flipOrientation :: Orientation -> Orientation
+flipOrientation = \case
+    Orientation_Row -> Orientation_Column
+    Orientation_Column -> Orientation_Row
+
+bbGrout2 :: forall t m a. (Sigh t m ) => Char -> Dynamic t Orientation -> Dynamic t BoundingBox -> m a -> m a
+bbGrout2 c currentOrientation bbDyn ui = do
+  grout (fixed (boxEdge <$> currentOrientation <*> bbDyn)) $ 
+    axis (flipOrientation <$>currentOrientation) flex $ 
+      grout (fixed (boxEdge . flipOrientation <$> currentOrientation <*> bbDyn)) $ row $ ({-fill (pure c) >>-} ui)
+
+  where
+    boxEdge :: Orientation -> BoundingBox -> Int
+    boxEdge o bb =
+      case o of
+        Orientation_Row -> bbWidth bb
+        Orientation_Column -> bbHeight bb
+
+testGrout0 :: (Sigh t m ) => m ()
+testGrout0 = do
+  row $ grout (fixed 30) $ col $ grout (fixed 1) $ row $ do
+    fill (pure '.')
+    row $ grout (fixed 23) $ col $ grout (fixed 1) $ row $ do
+      fill (pure 'A')
+      row $ grout (fixed 1) $ col $ grout (fixed 1) $ row $ do
+        fill (pure 'B')
+      row $ grout (fixed 22) $ col $ grout (fixed 1) $ row $ do
+        fill (pure 'C')
+        row $ grout (fixed 6) $ col $ grout (fixed 1) $ row $ do
+          fill (pure 'D')
+        row $ grout (fixed 16) $ col $ grout (fixed 1) $ row $ do
+          fill (pure 'E')
+
+testGrout1 :: (Sigh t m ) => m ()
+testGrout1 = do
+  row $ grout (fixed 30) $ col $ grout (fixed 1) $ row do
+    fill (pure '.')
+    grout (fixed 23) $ col $ grout (fixed 1) $ row do
+      fill (pure 'A')
+      grout (fixed 1) $ col $ grout (fixed 1) $ row do
+        fill (pure 'B')
+      grout (fixed 22) $ col $ grout (fixed 1) $ row do
+        fill (pure 'C')
+        grout (fixed 6) $ col $ grout (fixed 1) $ row do
+          fill (pure 'D')
+        grout (fixed 16) $ col $ grout (fixed 1) $ row do
+          fill (pure 'E')
+
+testGrout2 :: (Sigh t m ) => m ()
+testGrout2 = do
+  row $ grout (fixed 30) $ do
+    fill (pure '.')
+    grout (fixed 23) $ do
+      fill (pure 'A')
+      grout (fixed 1) $ do
+        fill (pure 'B')
+      grout (fixed 22) $ do
+        fill (pure 'C')
+        grout (fixed 6) $ do
+          fill (pure 'D')
+        grout (fixed 16) $ do
+          fill (pure 'E')
+
+testBbGrout :: (Sigh t m ) => m ()
+testBbGrout = do
+  bbGrout '.' (pure $ BoundingBox 30 1) $ do
+    bbGrout 'A' (pure $ BoundingBox 23 1) $ do
+      bbGrout 'B' (pure $ BoundingBox 1 1) blank
+      bbGrout 'C' (pure $ BoundingBox 22 1) $ do
+        bbGrout 'D' (pure $ BoundingBox 6 1) blank
+        bbGrout 'E' (pure $ BoundingBox 16 1) blank
+
+tneGrout :: forall t m a. (Sigh t m) => m (TermNodeEditor t a) -> m (TermNodeEditor t a)
+tneGrout tneAction = mdo
+  tne <- bbGrout 'T' (computeBoxes <$> tneBoundingBox tne) tneAction
+  return tne
 
 termExpressionEditorMain ::
   forall t m term.
   ( Sigh t m, TermExpressionEditor term, Show term) =>
   term -> m (Dynamic t term)
-termExpressionEditorMain initialTerm = do
+termExpressionEditorMain startTerm = do
   tabNavigation
   localInput censorTab $
     grout flex $
       boxTitle (pure singleBoxStyle) "Generic term editor" $ mdo
-        row $ mdo
-          grout flex $ text (T.pack . show <$> (current $ tneValue termDyn))
+        -- row $ mdo
+        --   grout flex $ text (T.pack . show <$> (current $ tneValue termDyn))
+        row $ grout flex $ mdo
+          text (T.pack . show <$> (current $ tneBoundingBox termDyn))
+
         termDyn <-
           grout flex $
             box
               (pure singleBoxStyle)
               ( mdo
-                  tne <- bbGrout (tneBoundingBox tne) (nodeEditor initialTerm)
+                  tne <- row $ nodeEditor startTerm
                   return tne
               )
         return (tneValue termDyn)
@@ -296,18 +420,18 @@ instance
   (HasDatatypeInfo term, All2 InitialTerm (Code term), Generic term) =>
   HoleFill (Generically term)
   where
-  holeFill name = fmap Generically $ makeNode name
+  holeFill name = fmap Generically $ makeNode
     where
       dti :: DatatypeInfo (Code term)
       dti = datatypeInfo (Proxy @term)
 
-      makeNode :: Text -> Maybe term
-      makeNode name = to . SOP <$> makeNodeG (constructorInfo dti) name
+      makeNode :: Maybe term
+      makeNode = to . SOP <$> makeNodeG (constructorInfo dti)
 
-      makeNodeG :: forall xss. (All2 InitialTerm xss) => NP ConstructorInfo xss -> Text -> Maybe (NS (NP I) xss)
-      makeNodeG Nil _ = Nothing
-      makeNodeG (con :* _) name | name == T.pack (constructorName con) = Just (Z $ makeConG con)
-      makeNodeG (_ :* cs) name | otherwise = S <$> makeNodeG cs name
+      makeNodeG :: forall xss. (All2 InitialTerm xss) => NP ConstructorInfo xss -> Maybe (NS (NP I) xss)
+      makeNodeG Nil = Nothing
+      makeNodeG (con :* _) | name == T.pack (constructorName con) = Just (Z $ makeConG con)
+      makeNodeG (_ :* cs) | otherwise = S <$> makeNodeG cs
 
       makeConG :: forall xss. (All InitialTerm xss) => ConstructorInfo xss -> NP I xss
       makeConG _ = hcpure (Proxy @InitialTerm) (I initialTerm)
@@ -328,15 +452,16 @@ class TermExpressionEditor term where
 
 instance TermExpressionEditor Text where
   nodeEditor t = mdo
-    (focusId, textRes) <- tile' (fixed widthDyn) 
-      (localTheme (fmap (`V.withStyle` V.underline))
-        (textInput def {_textInputConfig_initialValue = fromText t}))
-    isCursorAtEnd <- holdDyn True ((\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter ) <$> _textInput_userInput textRes)
-    -- isFocusedDyn <- isFocused focusId
-    let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> isCursorAtEnd -- ((&&) <$> isFocusedDyn <*> isCursorAtEnd)
-    let widthDyn = focusedWidthDyn + (T.length <$> _textInput_value textRes)
-    let bbDyn = (\w -> BoundingBox { bbHeight = 1, bbWidth = w }) <$> widthDyn
-    return $ TermNodeEditor never never (pure (Just focusId)) (_textInput_value textRes) bbDyn
+    tneGrout $ mdo
+      (focusId, textRes) <- tile' (fixed widthDyn) 
+        (localTheme (fmap (`V.withStyle` V.underline))
+          (textInput def {_textInputConfig_initialValue = fromText t}))
+      isCursorAtEnd <- holdDyn True ((\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter ) <$> _textInput_userInput textRes)
+      -- isFocusedDyn <- isFocused focusId
+      let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> isCursorAtEnd -- ((&&) <$> isFocusedDyn <*> isCursorAtEnd)
+      let widthDyn = focusedWidthDyn + (T.length <$> _textInput_value textRes)
+      let bbDyn = (\w -> BoxesLeaf "nodeEditor @Text"$ BoundingBox { bbHeight = 1, bbWidth = w }) <$> widthDyn
+      return $ TermNodeEditor never never (pure (Just focusId)) (_textInput_value textRes) bbDyn
 
 instance
   ( HoleFill (term (Fix (Hole :+: term))),
@@ -346,7 +471,7 @@ instance
   ) =>
   TermExpressionEditor (Fix (Hole :+: term))
   where
-  nodeEditor (Fix alt) = case alt of
+  nodeEditor (Fix alt) = tneGrout $ case alt of
     InL Hole -> updateableEditor holeEditor
     InR term -> updateableEditor $ fmap (fmap (Fix . InR . to)) $ termEditor (nodeTitle term) (from term)
     where
@@ -356,7 +481,6 @@ instance
         m (TermNodeEditor t (Fix (Hole :+: term))) ->
         m (TermNodeEditor t (Fix (Hole :+: term)))
       updateableEditor editorAction = mdo
-        tne <- grout (fixed (bbWidth <$> tneBoundingBox tne)) $ mdo
           tneDyn <- networkHold @t @m editorAction updateEditorEv
           let tne = switchTermNodeEditor tneDyn
           let replaceEv = tneReplaceTermEv tne
@@ -369,7 +493,6 @@ instance
           -- the new focus id the replaced editor gets.
           requestFocus $ fforMaybe (fmap Refocus_Id <$> updated focusIdDyn) id
           return $ tne
-        return tne
 
       termEditor ::
         forall t m xss.
@@ -382,17 +505,17 @@ instance
         SOP I xss ->
         m (TermNodeEditor t (SOP I xss))
       termEditor title (SOP (S dataxs)) = fmap (fmap (\(SOP x) -> SOP (S x))) (termEditor title (SOP dataxs))
-      termEditor title (SOP (Z args)) = do
-        row $ mdo
-          (focusId, punchHoleEv) <- tile' (fixed (pure $ T.length title)) $ mdo
+      termEditor title (SOP (Z args)) = mdo
+          (focusId, (punchHoleEv, selectedOrientationDyn)) <- tile' (fixed (pure $ T.length title)) $ mdo
             isFocusedDyn <- focus
             punchHoleEv <- fmap (() <$) (key (V.KBS))
+            selectedOrientationDyn <- foldDyn (const flipOrientation) Orientation_Row =<< key (V.KFun 1)
             let nodeStyle =
                   isFocusedDyn <&> \case
                     True -> V.defAttr `V.withStyle` V.reverseVideo
                     False -> V.defAttr
             richText (RichTextConfig (current nodeStyle)) $ pure title
-            return punchHoleEv
+            return (punchHoleEv, selectedOrientationDyn)
 
           -- I wonder what's a good way to let instances put custom UI between different sub editors.
           -- The use case of this is to mimic conventional syntax, so that instead of presenting:
@@ -412,31 +535,42 @@ instance
           -- We also need a way to handle infix operators.
           isFocusedDyn <- isFocused focusId
           let charWhenFocused :: Char -> m ()
-              charWhenFocused c = do
+              charWhenFocused c = mdo
                 grout (fixed 1) $ mdo
                   let nodeStyle =
                         isFocusedDyn <&> \case
                           True -> V.defAttr `V.withForeColor` V.srgbColor 0 0 (0 :: Int)  
                           False -> V.defAttr `V.withForeColor` V.srgbColor 230 230 (230 :: Int)
                   richText (RichTextConfig (current nodeStyle)) $ pure (T.singleton c)
-               
-              argEditor :: forall term. TermExpressionEditor term => term -> DynamicWriterT t [BoundingBox] m (Dynamic t term)
-              argEditor term = do
-                lift $ charWhenFocused '('
-                TermNodeEditor{tneBoundingBox, tneValue} <- lift $ nodeEditor term
-                lift $ charWhenFocused ')'
-                let bbDyn = do
-                        bb <- tneBoundingBox 
-                        return [ getHorizontally $ mconcat $ map Horizontally [bb, BoundingBox { bbHeight =1, bbWidth = 2 }]]
-                tellDyn bbDyn
-                return tneValue
-                
-          (argValuesDyn, argWidthsDyn) <- runDynamicWriterT $ unComp $ hcfor (Proxy @TermExpressionEditor) args (\(I arg) -> Comp (argEditor arg))
 
-          let widthDyn = do
-                bbs <- map Horizontally <$> argWidthsDyn
-                let titleBB = Horizontally BoundingBox { bbHeight = 1 , bbWidth = T.length title}
-                pure $ getHorizontally $ mconcat $ (titleBB : bbs)
+               
+          let argEditor :: forall term'. TermExpressionEditor term' => term' -> DynamicWriterT t [Boxes] m (Dynamic t term')
+              argEditor term = mdo
+                (bbDyn, val) <- lift $  bbGrout2 'a' selectedOrientationDyn (computeBoxes <$> bbDyn) $ mdo 
+                  charWhenFocused '('
+                  TermNodeEditor{tneBoundingBox, tneValue} <- nodeEditor term
+                  charWhenFocused ')'
+                  let bbDyn' = do
+                           bb <- tneBoundingBox 
+                           -- return $ getHorizontally $ mconcat $ map Horizontally [bb, BoundingBox { bbHeight = 1, bbWidth = 2 }]
+                           return $ BoxesHorizontally "arg" [bb, BoxesLeaf "\"()\"" $ BoundingBox { bbHeight = 1, bbWidth = 2 }]
+                  return (bbDyn', tneValue) -- (tneBoundingBox, tneValue) 
+                tellDyn ((:[]) <$> bbDyn)
+                return val
+
+          (argValuesDyn, argWidthsDyn) <- axis selectedOrientationDyn flex $ runDynamicWriterT $ 
+                        unComp $ hcfor (Proxy @TermExpressionEditor) args (\(I arg) -> Comp (argEditor arg))
+          -- let argsBB = (getHorizontally . mconcat . map Horizontally ) <$> argWidthsDyn
+          let argsBB = (\case 
+                          Orientation_Row -> BoxesHorizontally "all args" 
+                          Orientation_Column -> BoxesVertically "all args" 
+                        )  <$> selectedOrientationDyn <*> argWidthsDyn
+
+          let bbDyn = do
+                bbs <- argsBB
+                let titleBB = BoxesLeaf "node title" BoundingBox { bbHeight = 1 , bbWidth = T.length title}
+                -- pure $ getHorizontally $ titleBB <> bbs
+                pure $ BoxesHorizontally ("node \"" ++ T.unpack title ++ "\"") [ titleBB, bbs]
 
           return $
             TermNodeEditor
@@ -444,12 +578,11 @@ instance
                 tnePunchHoleEv = punchHoleEv,
                 tneFocusId = pure (Just focusId),
                 tneValue = SOP . Z <$> argValuesDyn,
-                tneBoundingBox = widthDyn
+                tneBoundingBox = bbDyn
               }
 
       holeEditor :: forall t m. (Sigh t m, HasLayout t m, HasFocus t m) => m (TermNodeEditor t (Fix (Hole :+: term)))
       holeEditor = mdo
-        (focusId, replaceEv, widthDyn) <- row $ grout (fixed widthDyn)  mdo
           grout
             (fixed 1)
             ( text $
@@ -466,11 +599,11 @@ instance
           let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> isCursorAtEnd -- ((&&) <$> isFocusedDyn <*> isCursorAtEnd)
           let textWidthDyn = focusedWidthDyn + (T.length <$> _textInput_value textRes)
           let replaceEv = fforMaybe (updated $ _textInput_value textRes) holeFill
-          return (focusId, replaceEv, 1+textWidthDyn)
+          let widthDyn = 1 + textWidthDyn
 
-        let bbDyn = (\w -> BoundingBox {bbHeight = 1, bbWidth = w}) <$> widthDyn
+          let bbDyn = (\w -> BoxesLeaf "hole" BoundingBox {bbHeight = 1, bbWidth = w}) <$> widthDyn
 
-        return $ TermNodeEditor (fmap (Fix . InR) replaceEv) never (pure (Just focusId)) (pure $ Fix (InL Hole)) bbDyn
+          return $ TermNodeEditor (fmap (Fix . InR) replaceEv) never (pure (Just focusId)) (pure $ Fix (InL Hole)) bbDyn
 
 -- * Term editor specialized to Dep-tut
 
@@ -529,6 +662,21 @@ main = do
   -- write out an initial program payload for starters.
   mainWidget $ initManager_ $ do
     exitKeyEv <- key V.KEsc
+
+    {-
+    grout (fixed 5) $ boxTitle (pure singleBoxStyle) "nested row-col-row" $ row $ grout flex $ mdo
+      testGrout0
+
+    grout (fixed 10) $ boxTitle (pure singleBoxStyle) "nested row-col only" $ row $ grout flex $ mdo
+      testGrout1
+
+    grout (fixed 5) $ boxTitle (pure singleBoxStyle) "No nested row/col, expected output" $ row $ grout flex $ mdo
+      col $ grout (fixed 1) $ testGrout2
+
+    grout (fixed 3) $ boxTitle (pure singleBoxStyle) "dynamic askOrientation" $ row $ grout flex $ mdo
+      row $ testBbGrout
+    -}
+
     -- _ <- malaExpressionEditor
     _ <- termExpressionEditorMain (Fix (InL Hole) :: Fix (Hole :+: SurfaceTerm))
     pure $ () <$ exitKeyEv
