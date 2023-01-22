@@ -391,13 +391,23 @@ class TermExpressionEditor term where
 instance TermExpressionEditor Text where
   nodeEditor t = mdo
     tneGrout $ mdo
-      (focusId, textRes) <- tile' (fixed widthDyn) 
-        (localTheme (fmap (`V.withStyle` V.underline))
-          (textInput def {_textInputConfig_initialValue = fromText t}))
-      isCursorAtEnd <- holdDyn True ((\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter ) <$> _textInput_userInput textRes)
-      -- isFocusedDyn <- isFocused focusId
-      let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> isCursorAtEnd -- ((&&) <$> isFocusedDyn <*> isCursorAtEnd)
-      let widthDyn = focusedWidthDyn + (T.length <$> _textInput_value textRes)
+      (focusId, (textRes, widthDyn)) <- tile' (fixed widthDyn) mdo
+        isFocusedDyn <- isFocused focusId
+        let lostFocusEv = () <$ ffilter not (updated isFocusedDyn)
+        res <- (localTheme (fmap (`V.withStyle` V.underline))
+          (textInput def {
+            _textInputConfig_initialValue = fromText t,
+            _textInputConfig_modify = (home . top) <$ lostFocusEv
+            }))
+        isCursorAtEnd <- holdDyn True (leftmost [
+            ((\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter )
+               <$> _textInput_userInput textRes),
+            False <$ lostFocusEv
+            ])
+        let isEmpty = (== T.empty) <$> _textInput_value textRes
+        let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> ((||) <$> isEmpty <*> isCursorAtEnd)
+        let widthDyn_ = focusedWidthDyn + (T.length <$> _textInput_value textRes)
+        return (res, widthDyn_)
       let bbDyn = (\w -> BoxesLeaf "nodeEditor @Text"$ BoundingBox { bbHeight = 1, bbWidth = w }) <$> widthDyn
       return $ TermNodeEditor never never (pure (Just focusId)) (_textInput_value textRes) bbDyn
 
