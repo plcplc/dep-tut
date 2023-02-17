@@ -1,34 +1,10 @@
-{-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE DerivingVia #-}
-{-# LANGUAGE EmptyCase #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards #-}
-{-# LANGUAGE RecursiveDo #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
 -- {-# OPTIONS_GHC -Wno-name-shadowing #-}
-{-# LANGUAGE NamedFieldPuns #-}
 
 module Main where
 
-import Control.Monad.Trans
+import Control.Monad.Reader
+import Data.Type.Equality
 import Codec.Serialise
-import Control.Monad
-import Control.Monad.Fix
 import Data.Functor
 import Data.String
 import Data.Text (Text)
@@ -41,8 +17,6 @@ import qualified Graphics.Vty as V
 import Reflex
 import Reflex.Network
 import Reflex.Vty
-import System.Directory
-import qualified Text.Read as Read
 import Prelude hiding (pi)
 
 data SerialisedTermCheckable
@@ -127,16 +101,6 @@ deriving instance GHC.Generics.Generic (Fix f)
 
 deriving instance Show (f (Fix f)) => Show (Fix f)
 
-data SomeTerm r where
-  SomeTermNullary :: SomeTerm r
-  SomeTermUnary :: r -> SomeTerm r
-  SomeTermBinary :: r -> r -> SomeTerm r
-  deriving (GHC.Generics.Generic, Show)
-
-instance Generic (SomeTerm r)
-
-instance HasDatatypeInfo (SomeTerm r)
-
 data TermNodeEditor t term = TermNodeEditor
   { tneReplaceTermEv :: Event t term, -- Fires when the node constructor changes.
     tnePunchHoleEv :: Event t (),
@@ -215,16 +179,16 @@ bbGrout' c bbDyn ui = do
   -- grout (fixed (boxEdge <$> o <*> bbDyn)) $ axis (flipOrientation <$> o) flex $ grout (fixed (boxEdge . flipOrientation <$> o <*> bbDyn)) $ axis o flex (fill (pure c) >> ui)
   --
   -- assumes already in 'row' axis.
-  grout (fixed $ bbHeight <$> bbDyn) $ row $ grout (fixed $ bbWidth <$> bbDyn) $ {-fill (pure c) >>-} ui
+  grout (fixed $ bbHeight <$> bbDyn) $ row $ grout (fixed $ bbWidth <$> bbDyn) {- $ fill (pure c) >>-} ui
 
 -- Phew. This was more complicated than I thought it would be..
 bbGrout :: forall t m a. (Sigh t m ) => Char -> Dynamic t BoundingBox -> m a -> m a
-bbGrout c bbDyn ui = do
+bbGrout _c bbDyn ui = do
   -- o <- askOrientation
   -- grout (fixed (boxEdge <$> o <*> bbDyn)) $ axis (flipOrientation <$> o) flex $ grout (fixed (boxEdge . flipOrientation <$> o <*> bbDyn)) $ axis o flex (fill (pure c) >> ui)
   --
   -- assumes already in 'row' axis.
-  grout (fixed $ bbWidth <$> bbDyn) $ col $ grout (fixed $ bbHeight <$> bbDyn) $ row $ {-fill (pure c) >>-} ui
+  grout (fixed $ bbWidth <$> bbDyn) $ col $ grout (fixed $ bbHeight <$> bbDyn) $ row {- $ fill (pure c) >> -} ui
 
 {-
   where
@@ -242,10 +206,10 @@ flipOrientation = \case
     Orientation_Column -> Orientation_Row
 
 bbGrout2 :: forall t m a. (Sigh t m ) => Char -> Dynamic t Orientation -> Dynamic t BoundingBox -> m a -> m a
-bbGrout2 c currentOrientation bbDyn ui = do
-  grout (fixed (boxEdge <$> currentOrientation <*> bbDyn)) $ 
-    axis (flipOrientation <$>currentOrientation) flex $ 
-      grout (fixed (boxEdge . flipOrientation <$> currentOrientation <*> bbDyn)) $ row $ ({-fill (pure c) >>-} ui)
+bbGrout2 _c currentOrientation bbDyn ui = do
+  grout (fixed (boxEdge <$> currentOrientation <*> bbDyn)) $
+    axis (flipOrientation <$>currentOrientation) flex $
+      grout (fixed (boxEdge . flipOrientation <$> currentOrientation <*> bbDyn)) $ row {- $ fill (pure c) >> -} ui
 
   where
     boxEdge :: Orientation -> BoundingBox -> Int
@@ -322,10 +286,12 @@ termExpressionEditorMain startTerm = do
   localInput censorTab $
     grout flex $
       boxTitle (pure singleBoxStyle) "Generic term editor" $ mdo
-        -- row $ mdo
-        --   grout flex $ text (T.pack . show <$> (current $ tneValue termDyn))
+      {-
+        row $ mdo
+          grout flex $ text (T.pack . show <$> (current $ tneValue termDyn))
         row $ grout flex $ mdo
           text (T.pack . show <$> (current $ tneBoundingBox termDyn))
+          -}
 
         termDyn <-
           grout flex $
@@ -393,15 +359,15 @@ instance TermExpressionEditor Text where
     tneGrout $ mdo
       (focusId, (textRes, widthDyn)) <- tile' (fixed widthDyn) mdo
         isFocusedDyn <- isFocused focusId
-        let lostFocusEv = () <$ ffilter not (updated isFocusedDyn)
-        res <- (localTheme (fmap (`V.withStyle` V.underline))
+        let lostFocusEv = void (ffilter not (updated isFocusedDyn))
+        res <- localTheme (fmap (`V.withStyle` V.underline))
           (textInput def {
             _textInputConfig_initialValue = fromText t,
             _textInputConfig_modify = (home . top) <$ lostFocusEv
-            }))
+            })
         isCursorAtEnd <- holdDyn True (leftmost [
-            ((\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter )
-               <$> _textInput_userInput textRes),
+            (\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter )
+               <$> _textInput_userInput textRes,
             False <$ lostFocusEv
             ])
         let isEmpty = (== T.empty) <$> _textInput_value textRes
@@ -487,31 +453,31 @@ instance
                 grout (fixed 1) $ mdo
                   let nodeStyle =
                         isFocusedDyn <&> \case
-                          True -> V.defAttr `V.withForeColor` V.srgbColor 0 0 (0 :: Int)  
+                          True -> V.defAttr `V.withForeColor` V.srgbColor 0 0 (0 :: Int)
                           False -> V.defAttr `V.withForeColor` V.srgbColor 230 230 (230 :: Int)
                   richText (RichTextConfig (current nodeStyle)) $ pure (T.singleton c)
 
-               
+
           let argEditor :: forall term'. TermExpressionEditor term' => term' -> DynamicWriterT t [Boxes] m (Dynamic t term')
               argEditor term = mdo
-                (bbDyn, val) <- lift $  bbGrout2 'a' selectedOrientationDyn (computeBoxes <$> bbDyn) $ mdo 
+                (bbDyn, val) <- lift $  bbGrout2 'a' selectedOrientationDyn (computeBoxes <$> bbDyn) $ mdo
                   charWhenFocused '('
                   TermNodeEditor{tneBoundingBox, tneValue} <- nodeEditor term
                   charWhenFocused ')'
                   let bbDyn' = do
-                           bb <- tneBoundingBox 
+                           bb <- tneBoundingBox
                            -- return $ getHorizontally $ mconcat $ map Horizontally [bb, BoundingBox { bbHeight = 1, bbWidth = 2 }]
                            return $ BoxesHorizontally "arg" [bb, BoxesLeaf "\"()\"" $ BoundingBox { bbHeight = 1, bbWidth = 2 }]
                   return (bbDyn', tneValue) -- (tneBoundingBox, tneValue) 
                 tellDyn ((:[]) <$> bbDyn)
                 return val
 
-          (argValuesDyn, argWidthsDyn) <- axis selectedOrientationDyn flex $ runDynamicWriterT $ 
+          (argValuesDyn, argWidthsDyn) <- axis selectedOrientationDyn flex $ runDynamicWriterT $
                         unComp $ hcfor (Proxy @TermExpressionEditor) args (\(I arg) -> Comp (argEditor arg))
           -- let argsBB = (getHorizontally . mconcat . map Horizontally ) <$> argWidthsDyn
-          let argsBB = (\case 
-                          Orientation_Row -> BoxesHorizontally "all args" 
-                          Orientation_Column -> BoxesVertically "all args" 
+          let argsBB = (\case
+                          Orientation_Row -> BoxesHorizontally "all args"
+                          Orientation_Column -> BoxesVertically "all args"
                         )  <$> selectedOrientationDyn <*> argWidthsDyn
 
           let bbDyn = do
@@ -540,7 +506,7 @@ instance
                 )
                   <$> current isFocusedDyn
             )
-          (focusId, textRes) <- tile' (fixed textWidthDyn) 
+          (focusId, textRes) <- tile' (fixed textWidthDyn)
             (localTheme (fmap (`V.withStyle` V.underline)) (textInput def))
           isCursorAtEnd <- holdDyn True ((\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter ) <$> _textInput_userInput textRes)
           isFocusedDyn <- isFocused focusId
@@ -588,7 +554,7 @@ instance HoleFill  (SurfaceTerm (Fix (Hole :+: SurfaceTerm))) where
     "π" -> Just $ STermPi "" (Fix (InL Hole)) (Fix (InL Hole))
     "pi" -> Just $ STermPi "" (Fix (InL Hole)) (Fix (InL Hole))
     "%" -> Just $ STermBound ""
-    "$" -> Just $ STermApplication(Fix (InL Hole))(Fix (InL Hole))
+    "$" -> Just $ STermApplication (Fix (InL Hole)) (Fix (InL Hole))
     "λ" -> Just $ STermLambda "" (Fix (InL Hole))
     "lambda" -> Just $ STermLambda "" (Fix (InL Hole))
     _ -> Nothing
@@ -602,13 +568,85 @@ instance NodeEditorSkin (SurfaceTerm t) where
     STermApplication {} -> "$"
     STermLambda {} -> "λ"
 
+data SomeTerm = forall i. SomeTerm {getSomeTerm :: Term i}
+
+newtype DesugarM a = DesugarM { unDesugarM :: ReaderT (Text -> DesugarM Int) (Either Text) a }
+  deriving (Functor, Applicative, Monad)
+
+desugarError :: Text -> DesugarM a
+desugarError err = DesugarM $ lift (Left err)
+
+runDesugarM :: DesugarM a -> Either Text a
+runDesugarM = flip runReaderT (\x -> desugarError ("unbound variable " <> x)) . unDesugarM
+
+scope :: forall a. Text -> DesugarM a -> DesugarM a
+scope var = DesugarM . local bind . unDesugarM
+  where
+    bind :: (Text -> DesugarM Int) -> Text -> DesugarM Int
+    bind outerScope x | var == x = return 0
+                      | otherwise = (1 +) <$> outerScope x
+
+lookupVar :: Text -> DesugarM Int
+lookupVar x = join $ ($ x ) <$> DesugarM ask
+
+desugarTermF :: Fix (Hole :+: SurfaceTerm) -> DesugarM SomeTerm
+desugarTermF = \case
+  Fix (InL Hole) -> desugarError "There are still holes left!"
+  Fix (InR term) -> desugarTerm term
+
+desugarTerm :: SurfaceTerm (Fix (Hole :+: SurfaceTerm)) -> DesugarM SomeTerm
+desugarTerm = \case
+  STermAnnotated e t -> do
+    SomeTerm e' <- desugarTermF e
+    SomeTerm t' <- desugarTermF t
+    return $ SomeTerm $ TermAnnotated (toCheckable' e') (toCheckable' t')
+  STermLambda x e -> do
+    SomeTerm e' <- scope x (desugarTermF e)
+    return $ SomeTerm $ TermLambda (toCheckable' e')
+  STermBound x -> do
+    v <- lookupVar x
+    return $ SomeTerm $ TermBound v
+  STermApplication f x -> do
+    SomeTerm f' <- desugarTermF f
+    Refl <- assertInferable f'
+    SomeTerm x' <- desugarTermF x
+    return $ SomeTerm $ TermApplication f' (toCheckable' x')
+  STermPi x k t -> do
+    SomeTerm k' <- desugarTermF k
+    SomeTerm t' <- scope x (desugarTermF t)
+    return $ SomeTerm $ TermPi (toCheckable' k') (toCheckable' t')
+  STermStar -> return $ SomeTerm TermStar
+
+  where
+    assertInferable :: forall i. Term i -> DesugarM (i :~: 'Inferable)
+    assertInferable = \case
+      TermAnnotated{} -> return Refl
+      TermStar{} ->  return Refl
+      TermPi{} ->  return Refl
+      TermBound{} ->  return Refl
+      TermFree{} ->  return Refl
+      TermApplication{} ->  return Refl
+      TermInferred{} -> desugarError "lowered-to-checkable term is not Inferable (this is a weird case)"
+      TermLambda{} -> desugarError "λ is not inferable"
+
+    toCheckable' :: forall i. Term i -> Term 'Checkable
+    toCheckable' = \case
+      t@TermAnnotated{} -> TermInferred t
+      t@TermStar{} ->  TermInferred t
+      t@TermPi{} ->  TermInferred t
+      t@TermBound{} ->  TermInferred t
+      t@TermFree{} ->  TermInferred t
+      t@TermApplication{} ->  TermInferred t
+      t@TermInferred{} -> t
+      t@TermLambda{} -> t
+
 main :: IO ()
 main = do
   putStrLn "~Málà~"
   -- exists <- doesFileExist "mala.cbor"
   -- unless exists $ do
   -- write out an initial program payload for starters.
-  mainWidget $ initManager_ $ do
+  mainWidget $ initManager_ $ mdo
     exitKeyEv <- key V.KEsc
 
     {-
@@ -625,8 +663,15 @@ main = do
       row $ testBbGrout
     -}
 
+    let ppDesugar :: Fix (Hole :+: SurfaceTerm) -> Text
+        ppDesugar tF = either id (\(SomeTerm t) ->  T.pack $ ppTerm t) $ runDesugarM (desugarTermF tF)
+    grout flex $
+      boxTitle (pure singleBoxStyle) "Desugared" $ mdo
+        grout (fixed 3) $ row $ text (ppDesugar <$> current termF)
+
     -- _ <- malaExpressionEditor
-    _ <- termExpressionEditorMain (Fix (InL Hole) :: Fix (Hole :+: SurfaceTerm))
+    termF  <- grout flex $ termExpressionEditorMain (Fix (InL Hole) :: Fix (Hole :+: SurfaceTerm))
+
     pure $ () <$ exitKeyEv
 
 {-
