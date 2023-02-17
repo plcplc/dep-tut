@@ -116,7 +116,7 @@ ppTerm TermStar = "*"
 ppTerm (TermPi tc1 tc2) = "∀(" ++ ppTerm tc1 ++ ")." ++ ppTerm tc2
 ppTerm (TermBound i) = show i
 ppTerm (TermFree n) = show n
-ppTerm (TermApplication ti tc) = "(" ++ ppTerm ti ++ " " ++ ppTerm tc ++ ")"
+ppTerm (TermApplication ti tc) = "(" ++ ppTerm ti ++ " $ " ++ ppTerm tc ++ ")"
 ppTerm (TermInferred ti) = ppTerm ti
 ppTerm (TermLambda tc) = "λ." ++ ppTerm tc
 

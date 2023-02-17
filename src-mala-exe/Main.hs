@@ -288,9 +288,6 @@ termExpressionEditorMain startTerm = do
           -}
 
         termDyn <-
-          grout flex $
-            box
-              (pure singleBoxStyle)
               ( mdo
                   tne <- row $ nodeEditor startTerm
                   return tne
@@ -609,28 +606,27 @@ desugarTerm = \case
     return $ SomeTerm $ TermPi (toCheckable' k') (toCheckable' t')
   STermStar -> return $ SomeTerm TermStar
 
-  where
-    assertInferable :: forall i. Term i -> DesugarM (i :~: 'Inferable)
-    assertInferable = \case
-      TermAnnotated{} -> return Refl
-      TermStar{} ->  return Refl
-      TermPi{} ->  return Refl
-      TermBound{} ->  return Refl
-      TermFree{} ->  return Refl
-      TermApplication{} ->  return Refl
-      TermInferred{} -> desugarError "lowered-to-checkable term is not Inferable (this is a weird case)"
-      TermLambda{} -> desugarError "λ is not inferable"
+assertInferable :: forall i. Term i -> DesugarM (i :~: 'Inferable)
+assertInferable = \case
+  TermAnnotated{} -> return Refl
+  TermStar{} ->  return Refl
+  TermPi{} ->  return Refl
+  TermBound{} ->  return Refl
+  TermFree{} ->  return Refl
+  TermApplication{} ->  return Refl
+  TermInferred{} -> desugarError "lowered-to-checkable term is not Inferable (this is a weird case)"
+  TermLambda{} -> desugarError "λ is not inferable"
 
-    toCheckable' :: forall i. Term i -> Term 'Checkable
-    toCheckable' = \case
-      t@TermAnnotated{} -> TermInferred t
-      t@TermStar{} ->  TermInferred t
-      t@TermPi{} ->  TermInferred t
-      t@TermBound{} ->  TermInferred t
-      t@TermFree{} ->  TermInferred t
-      t@TermApplication{} ->  TermInferred t
-      t@TermInferred{} -> t
-      t@TermLambda{} -> t
+toCheckable' :: forall i. Term i -> Term 'Checkable
+toCheckable' = \case
+  t@TermAnnotated{} -> TermInferred t
+  t@TermStar{} ->  TermInferred t
+  t@TermPi{} ->  TermInferred t
+  t@TermBound{} ->  TermInferred t
+  t@TermFree{} ->  TermInferred t
+  t@TermApplication{} ->  TermInferred t
+  t@TermInferred{} -> t
+  t@TermLambda{} -> t
 
 main :: IO ()
 main = do
@@ -655,10 +651,18 @@ main = do
       row $ testBbGrout
     -}
 
-    let ppDesugar :: Fix (Hole :+: SurfaceTerm) -> Text
-        ppDesugar tF = either id (\(SomeTerm t) ->  T.pack $ ppTerm t) $ runDesugarM (desugarTermF tF)
+    let displayTerm :: Fix (Hole :+: SurfaceTerm) -> Text
+        displayTerm tF = either id T.unlines $ runDesugarM $ do
+          SomeTerm t <- desugarTermF tF
+          Refl <- assertInferable t
+          let ppT = T.pack $ ppTerm t
+          ty <- DesugarM $ lift $ (\case {Left e -> Left (T.pack e); Right x -> Right x}) $ typeInfer 0 [] t
+          let ppTy = T.pack $ ppTerm $ quote 0 ty
+          return [ppT, ppTy]
+
     grout flex $
-      boxTitle (pure singleBoxStyle) "Desugared" $ grout (fixed 3) $ row $ text (ppDesugar <$> current termF)
+      boxTitle (pure singleBoxStyle) "Desugared" $ grout (fixed 3) $ do
+        row $ text (displayTerm <$> current termF)
 
     -- _ <- malaExpressionEditor
     termF  <- grout flex $ termExpressionEditorMain (Fix (InL Hole) :: Fix (Hole :+: SurfaceTerm))
