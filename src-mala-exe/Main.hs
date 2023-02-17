@@ -1,5 +1,4 @@
 -- {-# OPTIONS_GHC -Wno-name-shadowing #-}
-
 module Main where
 
 import Control.Monad.Reader
@@ -72,7 +71,7 @@ termCheckableToDto (TermInferred ti) = STCTermInferred (termInferableToDto ti)
 termCheckableToDto (TermLambda tc) = STCTermLambda (termCheckableToDto tc)
 
 termInferableToDto :: Term 'Inferable -> SerialisedTermInferable
-termInferableToDto (TermStar) = STITermStar
+termInferableToDto TermStar = STITermStar
 termInferableToDto (TermPi tc1 tc2) = STITermPi (termCheckableToDto tc1) (termCheckableToDto tc2)
 termInferableToDto (TermBound i) = STITermBound i
 termInferableToDto (TermFree name) = STITermFree (nameToDto name)
@@ -161,9 +160,9 @@ switchTermNodeEditor dynTNE =
   TermNodeEditor
     { tneReplaceTermEv = switchDyn (tneReplaceTermEv <$> dynTNE),
       tnePunchHoleEv = switchDyn (tnePunchHoleEv <$> dynTNE),
-      tneFocusId = join (tneFocusId <$> dynTNE),
-      tneValue = join (tneValue <$> dynTNE),
-      tneBoundingBox = join (tneBoundingBox <$> dynTNE)
+      tneFocusId = tneFocusId =<< dynTNE,
+      tneValue = tneValue =<< dynTNE,
+      tneBoundingBox = tneBoundingBox =<< dynTNE
     }
 
 data (:+:) f g a = InL (f a) | InR (g a)
@@ -174,7 +173,7 @@ data Hole f = Hole
   deriving (Show)
 
 bbGrout' :: forall t m a. (Sigh t m ) => Char -> Dynamic t BoundingBox -> m a -> m a
-bbGrout' c bbDyn ui = do
+bbGrout' _c bbDyn ui = do
   -- o <- askOrientation
   -- grout (fixed (boxEdge <$> o <*> bbDyn)) $ axis (flipOrientation <$> o) flex $ grout (fixed (boxEdge . flipOrientation <$> o <*> bbDyn)) $ axis o flex (fill (pure c) >> ui)
   --
@@ -206,10 +205,9 @@ flipOrientation = \case
     Orientation_Column -> Orientation_Row
 
 bbGrout2 :: forall t m a. (Sigh t m ) => Char -> Dynamic t Orientation -> Dynamic t BoundingBox -> m a -> m a
-bbGrout2 _c currentOrientation bbDyn ui = do
-  grout (fixed (boxEdge <$> currentOrientation <*> bbDyn)) $
-    axis (flipOrientation <$>currentOrientation) flex $
-      grout (fixed (boxEdge . flipOrientation <$> currentOrientation <*> bbDyn)) $ row {- $ fill (pure c) >> -} ui
+bbGrout2 _c currentOrientation bbDyn ui = grout (fixed (boxEdge <$> currentOrientation <*> bbDyn)) $
+  axis (flipOrientation <$>currentOrientation) flex $
+    grout (fixed (boxEdge . flipOrientation <$> currentOrientation <*> bbDyn)) $ row {- $ fill (pure c) >> -} ui
 
   where
     boxEdge :: Orientation -> BoundingBox -> Int
@@ -219,58 +217,54 @@ bbGrout2 _c currentOrientation bbDyn ui = do
         Orientation_Column -> bbHeight bb
 
 testGrout0 :: (Sigh t m ) => m ()
-testGrout0 = do
-  row $ grout (fixed 30) $ col $ grout (fixed 1) $ row $ do
-    fill (pure '.')
-    row $ grout (fixed 23) $ col $ grout (fixed 1) $ row $ do
-      fill (pure 'A')
-      row $ grout (fixed 1) $ col $ grout (fixed 1) $ row $ do
-        fill (pure 'B')
-      row $ grout (fixed 22) $ col $ grout (fixed 1) $ row $ do
-        fill (pure 'C')
-        row $ grout (fixed 6) $ col $ grout (fixed 1) $ row $ do
-          fill (pure 'D')
-        row $ grout (fixed 16) $ col $ grout (fixed 1) $ row $ do
-          fill (pure 'E')
+testGrout0 = row $ grout (fixed 30) $ col $ grout (fixed 1) $ row $ do
+  fill (pure '.')
+  row $ grout (fixed 23) $ col $ grout (fixed 1) $ row $ do
+    fill (pure 'A')
+    row $ grout (fixed 1) $ col $ grout (fixed 1) $ row $ do
+      fill (pure 'B')
+    row $ grout (fixed 22) $ col $ grout (fixed 1) $ row $ do
+      fill (pure 'C')
+      row $ grout (fixed 6) $ col $ grout (fixed 1) $ row $ do
+        fill (pure 'D')
+      row $ grout (fixed 16) $ col $ grout (fixed 1) $ row $ do
+        fill (pure 'E')
 
 testGrout1 :: (Sigh t m ) => m ()
-testGrout1 = do
-  row $ grout (fixed 30) $ col $ grout (fixed 1) $ row do
-    fill (pure '.')
-    grout (fixed 23) $ col $ grout (fixed 1) $ row do
-      fill (pure 'A')
-      grout (fixed 1) $ col $ grout (fixed 1) $ row do
-        fill (pure 'B')
-      grout (fixed 22) $ col $ grout (fixed 1) $ row do
-        fill (pure 'C')
-        grout (fixed 6) $ col $ grout (fixed 1) $ row do
-          fill (pure 'D')
-        grout (fixed 16) $ col $ grout (fixed 1) $ row do
-          fill (pure 'E')
+testGrout1 = row $ grout (fixed 30) $ col $ grout (fixed 1) $ row do
+  fill (pure '.')
+  grout (fixed 23) $ col $ grout (fixed 1) $ row do
+    fill (pure 'A')
+    grout (fixed 1) $ col $ grout (fixed 1) $ row do
+      fill (pure 'B')
+    grout (fixed 22) $ col $ grout (fixed 1) $ row do
+      fill (pure 'C')
+      grout (fixed 6) $ col $ grout (fixed 1) $ row do
+        fill (pure 'D')
+      grout (fixed 16) $ col $ grout (fixed 1) $ row do
+        fill (pure 'E')
 
 testGrout2 :: (Sigh t m ) => m ()
-testGrout2 = do
-  row $ grout (fixed 30) $ do
-    fill (pure '.')
-    grout (fixed 23) $ do
-      fill (pure 'A')
-      grout (fixed 1) $ do
-        fill (pure 'B')
-      grout (fixed 22) $ do
-        fill (pure 'C')
-        grout (fixed 6) $ do
-          fill (pure 'D')
-        grout (fixed 16) $ do
-          fill (pure 'E')
+testGrout2 = row $ grout (fixed 30) $ do
+  fill (pure '.')
+  grout (fixed 23) $ do
+    fill (pure 'A')
+    grout (fixed 1) $ do
+      fill (pure 'B')
+    grout (fixed 22) $ do
+      fill (pure 'C')
+      grout (fixed 6) $ do
+        fill (pure 'D')
+      grout (fixed 16) $ do
+        fill (pure 'E')
 
 testBbGrout :: (Sigh t m ) => m ()
-testBbGrout = do
-  bbGrout '.' (pure $ BoundingBox 30 1) $ do
-    bbGrout 'A' (pure $ BoundingBox 23 1) $ do
-      bbGrout 'B' (pure $ BoundingBox 1 1) blank
-      bbGrout 'C' (pure $ BoundingBox 22 1) $ do
-        bbGrout 'D' (pure $ BoundingBox 6 1) blank
-        bbGrout 'E' (pure $ BoundingBox 16 1) blank
+testBbGrout = bbGrout '.' (pure $ BoundingBox 30 1) $ do
+  bbGrout 'A' (pure $ BoundingBox 23 1) $ do
+    bbGrout 'B' (pure $ BoundingBox 1 1) blank
+    bbGrout 'C' (pure $ BoundingBox 22 1) $ do
+      bbGrout 'D' (pure $ BoundingBox 6 1) blank
+      bbGrout 'E' (pure $ BoundingBox 16 1) blank
 
 tneGrout :: forall t m a. (Sigh t m) => m (TermNodeEditor t a) -> m (TermNodeEditor t a)
 tneGrout tneAction = mdo
@@ -324,7 +318,7 @@ instance
   (HasDatatypeInfo term, All2 InitialTerm (Code term), Generic term) =>
   HoleFill (Generically term)
   where
-  holeFill name = fmap Generically $ makeNode
+  holeFill name = Generically <$> makeNode
     where
       dti :: DatatypeInfo (Code term)
       dti = datatypeInfo (Proxy @term)
@@ -335,7 +329,7 @@ instance
       makeNodeG :: forall xss. (All2 InitialTerm xss) => NP ConstructorInfo xss -> Maybe (NS (NP I) xss)
       makeNodeG Nil = Nothing
       makeNodeG (con :* _) | name == T.pack (constructorName con) = Just (Z $ makeConG con)
-      makeNodeG (_ :* cs) | otherwise = S <$> makeNodeG cs
+      makeNodeG (_ :* cs)  = S <$> makeNodeG cs
 
       makeConG :: forall xss. (All InitialTerm xss) => ConstructorInfo xss -> NP I xss
       makeConG _ = hcpure (Proxy @InitialTerm) (I initialTerm)
@@ -355,27 +349,26 @@ class TermExpressionEditor term where
   nodeEditor :: forall t m. Sigh t m => term -> m (TermNodeEditor t term)
 
 instance TermExpressionEditor Text where
-  nodeEditor t = mdo
-    tneGrout $ mdo
-      (focusId, (textRes, widthDyn)) <- tile' (fixed widthDyn) mdo
-        isFocusedDyn <- isFocused focusId
-        let lostFocusEv = void (ffilter not (updated isFocusedDyn))
-        res <- localTheme (fmap (`V.withStyle` V.underline))
-          (textInput def {
-            _textInputConfig_initialValue = fromText t,
-            _textInputConfig_modify = (home . top) <$ lostFocusEv
-            })
-        isCursorAtEnd <- holdDyn True (leftmost [
-            (\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter )
-               <$> _textInput_userInput textRes,
-            False <$ lostFocusEv
-            ])
-        let isEmpty = (== T.empty) <$> _textInput_value textRes
-        let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> ((||) <$> isEmpty <*> isCursorAtEnd)
-        let widthDyn_ = focusedWidthDyn + (T.length <$> _textInput_value textRes)
-        return (res, widthDyn_)
-      let bbDyn = (\w -> BoxesLeaf "nodeEditor @Text"$ BoundingBox { bbHeight = 1, bbWidth = w }) <$> widthDyn
-      return $ TermNodeEditor never never (pure (Just focusId)) (_textInput_value textRes) bbDyn
+  nodeEditor t = tneGrout $ mdo
+    (focusId, (textRes, widthDyn)) <- tile' (fixed widthDyn) mdo
+      isFocusedDyn <- isFocused focusId
+      let lostFocusEv = void (ffilter not (updated isFocusedDyn))
+      res <- localTheme (fmap (`V.withStyle` V.underline))
+        (textInput def {
+          _textInputConfig_initialValue = fromText t,
+          _textInputConfig_modify = (home . top) <$ lostFocusEv
+          })
+      isCursorAtEnd <- holdDyn True (leftmost [
+          (\TextZipper{..} -> _textZipper_after == "" && null _textZipper_linesAfter )
+             <$> _textInput_userInput textRes,
+          False <$ lostFocusEv
+          ])
+      let isEmpty = (== T.empty) <$> _textInput_value textRes
+      let focusedWidthDyn = (\case {True -> 1; False -> 0}) <$> ((||) <$> isEmpty <*> isCursorAtEnd)
+      let widthDyn_ = focusedWidthDyn + (T.length <$> _textInput_value textRes)
+      return (res, widthDyn_)
+    let bbDyn = (\w -> BoxesLeaf "nodeEditor @Text"$ BoundingBox { bbHeight = 1, bbWidth = w }) <$> widthDyn
+    return $ TermNodeEditor never never (pure (Just focusId)) (_textInput_value textRes) bbDyn
 
 instance
   ( HoleFill (term (Fix (Hole :+: term))),
@@ -387,7 +380,7 @@ instance
   where
   nodeEditor (Fix alt) = tneGrout $ case alt of
     InL Hole -> updateableEditor holeEditor
-    InR term -> updateableEditor $ fmap (fmap (Fix . InR . to)) $ termEditor (nodeTitle term) (from term)
+    InR term -> updateableEditor (fmap (Fix . InR . to) <$> termEditor (nodeTitle term) (from term))
     where
       updateableEditor ::
         forall t m.
@@ -406,7 +399,7 @@ instance
           -- It would be wrong to refocus on 'updateEditorEv', as we don't know
           -- the new focus id the replaced editor gets.
           requestFocus $ fforMaybe (fmap Refocus_Id <$> updated focusIdDyn) id
-          return $ tne
+          return tne
 
       termEditor ::
         forall t m xss.
@@ -422,7 +415,7 @@ instance
       termEditor title (SOP (Z args)) = mdo
           (focusId, (punchHoleEv, selectedOrientationDyn)) <- tile' (fixed (pure $ T.length title)) $ mdo
             isFocusedDyn <- focus
-            punchHoleEv <- fmap (() <$) (key (V.KBS))
+            punchHoleEv <- fmap (() <$) (key V.KBS)
             selectedOrientationDyn <- foldDyn (const flipOrientation) Orientation_Row =<< key (V.KFun 1)
             let nodeStyle =
                   isFocusedDyn <&> \case
@@ -449,13 +442,12 @@ instance
           -- We also need a way to handle infix operators.
           isFocusedDyn <- isFocused focusId
           let charWhenFocused :: Char -> m ()
-              charWhenFocused c = mdo
-                grout (fixed 1) $ mdo
-                  let nodeStyle =
-                        isFocusedDyn <&> \case
-                          True -> V.defAttr `V.withForeColor` V.srgbColor 0 0 (0 :: Int)
-                          False -> V.defAttr `V.withForeColor` V.srgbColor 230 230 (230 :: Int)
-                  richText (RichTextConfig (current nodeStyle)) $ pure (T.singleton c)
+              charWhenFocused c = grout (fixed 1) $ mdo
+                let nodeStyle =
+                      isFocusedDyn <&> \case
+                        True -> V.defAttr `V.withForeColor` V.srgbColor 0 0 (0 :: Int)
+                        False -> V.defAttr `V.withForeColor` V.srgbColor 230 230 (230 :: Int)
+                richText (RichTextConfig (current nodeStyle)) $ pure (T.singleton c)
 
 
           let argEditor :: forall term'. TermExpressionEditor term' => term' -> DynamicWriterT t [Boxes] m (Dynamic t term')
@@ -550,7 +542,7 @@ instance Generic (SurfaceTerm t)
 instance HoleFill  (SurfaceTerm (Fix (Hole :+: SurfaceTerm))) where
   holeFill = \case
     ":" -> Just $ STermAnnotated (Fix (InL Hole)) (Fix (InL Hole))
-    "*" -> Just $ STermStar
+    "*" -> Just STermStar
     "π" -> Just $ STermPi "" (Fix (InL Hole)) (Fix (InL Hole))
     "pi" -> Just $ STermPi "" (Fix (InL Hole)) (Fix (InL Hole))
     "%" -> Just $ STermBound ""
@@ -587,7 +579,7 @@ scope var = DesugarM . local bind . unDesugarM
                       | otherwise = (1 +) <$> outerScope x
 
 lookupVar :: Text -> DesugarM Int
-lookupVar x = join $ ($ x ) <$> DesugarM ask
+lookupVar x = ($ x ) =<< DesugarM ask
 
 desugarTermF :: Fix (Hole :+: SurfaceTerm) -> DesugarM SomeTerm
 desugarTermF = \case
@@ -666,13 +658,12 @@ main = do
     let ppDesugar :: Fix (Hole :+: SurfaceTerm) -> Text
         ppDesugar tF = either id (\(SomeTerm t) ->  T.pack $ ppTerm t) $ runDesugarM (desugarTermF tF)
     grout flex $
-      boxTitle (pure singleBoxStyle) "Desugared" $ mdo
-        grout (fixed 3) $ row $ text (ppDesugar <$> current termF)
+      boxTitle (pure singleBoxStyle) "Desugared" $ grout (fixed 3) $ row $ text (ppDesugar <$> current termF)
 
     -- _ <- malaExpressionEditor
     termF  <- grout flex $ termExpressionEditorMain (Fix (InL Hole) :: Fix (Hole :+: SurfaceTerm))
 
-    pure $ () <$ exitKeyEv
+    pure $ void exitKeyEv
 
 {-
     writeFileSerialise "mala.cbor" (termInferableToDto (runExp initialProgram))

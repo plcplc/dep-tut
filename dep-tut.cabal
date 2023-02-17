@@ -53,6 +53,31 @@ executable mala
   hs-source-dirs: src-mala-exe
   ghc-options: -Wall -threaded
   default-language: Haskell2010
+  default-extensions:
+    BlockArguments
+    GeneralizedNewtypeDeriving
+    TupleSections
+    ConstraintKinds
+    DataKinds
+    DeriveGeneric
+    DerivingStrategies
+    DerivingVia
+    EmptyCase
+    FlexibleContexts
+    FlexibleInstances
+    GADTs
+    KindSignatures
+    LambdaCase
+    OverloadedStrings
+    RecordWildCards
+    RecursiveDo
+    ScopedTypeVariables
+    StandaloneDeriving
+    TypeApplications
+    TypeOperators
+    UndecidableInstances
+    NamedFieldPuns
+    RankNTypes
 
 
 
