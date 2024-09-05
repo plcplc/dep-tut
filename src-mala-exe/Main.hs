@@ -442,16 +442,17 @@ instance
         m (TermNodeEditor t (SOP I xss))
       termEditor title (SOP (S dataxs)) = fmap (fmap (\(SOP x) -> SOP (S x))) (termEditor title (SOP dataxs))
       termEditor title (SOP (Z args)) = mdo
-        (focusId, (punchHoleEv, selectedOrientationDyn)) <- tile' (fixed (pure $ T.length title)) $ mdo
-          isFocusedDyn <- focus
-          punchHoleEv <- fmap (() <$) (key V.KBS)
-          selectedOrientationDyn <- foldDyn (const flipOrientation) Orientation_Row =<< key (V.KFun 1)
-          let nodeStyle =
-                isFocusedDyn <&> \case
-                  True -> V.defAttr `V.withStyle` V.reverseVideo
-                  False -> V.defAttr
-          richText (RichTextConfig (current nodeStyle)) $ pure title
-          return (punchHoleEv, selectedOrientationDyn)
+        (focusId, (punchHoleEv, selectedOrientationDyn)) <-
+          tile' (fixed (pure $ T.length title)) $ mdo
+            isFocusedDyn <- focus
+            punchHoleEv <- fmap (() <$) (key V.KBS)
+            selectedOrientationDyn <- foldDyn (const flipOrientation) Orientation_Row =<< key (V.KFun 1)
+            let nodeStyle =
+                  isFocusedDyn <&> \case
+                    True -> V.defAttr `V.withStyle` V.reverseVideo
+                    False -> V.defAttr
+            richText (RichTextConfig (current nodeStyle)) $ pure title
+            return (punchHoleEv, selectedOrientationDyn)
 
         -- I wonder what's a good way to let instances put custom UI between different sub editors.
         -- The use case of this is to mimic conventional syntax, so that instead of presenting:
