@@ -76,6 +76,7 @@ module DepTutMain where
 
 import Control.Arrow (second)
 import Control.Monad
+import Control.Monad.Trans qualified as E
 import Control.Monad.Except qualified as E
 import Prelude hiding (pi)
 import Language.Haskell.TH.Syntax (Lift)

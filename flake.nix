@@ -22,14 +22,14 @@
       devShells.default =
         let
           pkgs = import nixpkgs { inherit system; };
-          ghcName = "ghc944";
+          ghcName = "ghc966";
           doDistribute = pkgs.haskell.lib.doDistribute;
           dontCheck = pkgs.haskell.lib.dontCheck;
           jailbreak = pkgs.haskell.lib.doJailbreak;
           hs = pkgs.haskell.packages.${ghcName}.override {
               overrides = hsPkgNew : hsPkgOld : rec {
                 # "hspec-contrib" = jailbreak hsPkgOld.hspec-contrib;
-                ormolu = doDistribute hsPkgOld.ormolu_0_5_3_0;
+                # ormolu = doDistribute hsPkgOld.ormolu_0_5_3_0;
                 ghcid = dontCheck hsPkgOld.ghcid;
                 /*
                 tar = jailbreak hsPkgOld.tar;

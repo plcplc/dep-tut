@@ -8,7 +8,7 @@ maintainer:          plcplc@gmail.com
 
 common lib-depends
   build-depends:
-          base >=4.15.0.0,
+          base,
           text,
           template-haskell,
           mtl,
@@ -29,7 +29,7 @@ library
 
 executable dep-tut
   main-is:             Main.hs
-  build-depends:       base >=4.15.0.0,
+  build-depends:       base,
                        dep-tut,
   hs-source-dirs:      src-exe
   ghc-options:         -Wall

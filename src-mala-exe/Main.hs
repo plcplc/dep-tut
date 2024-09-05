@@ -4,6 +4,8 @@
 module Main where
 
 import Codec.Serialise
+import Control.Monad
+import Control.Monad.Fix
 import Control.Monad.Reader
 import Data.Functor
 import Data.String
@@ -713,18 +715,17 @@ main = do
       performEvent_ (liftIO . writeFileSerialise "mala.cbor" <$> updated stDyn)
 
       updateSt <- initManager_ $ mdo
-        saveBtnEv <- tile (fixed 3) $ do
-          let buttonConfig =
-                ButtonConfig
-                  { _buttonConfig_boxStyle = pure singleBoxStyle,
-                    _buttonConfig_focusStyle = pure thickBoxStyle
-                  }
-          textButtonStatic buttonConfig "Save (F2)"
+        _ <-
+          grout (fixed 5) $
+            boxTitle (pure singleBoxStyle) "Usage" (do
+                grout (fixed 1) $ text "Life cycle: <F2> saves to mala.cbor. <Esc> quits."
+                grout (fixed 1) $ text "Navigation: <Tab>, <S-Tab> traverses nodes. <F1> toggles horizontal/vertical display. <F2> saves to mala.cbor. <Esc> quits."
+                grout (fixed 1) $ text "Editing: <BS> replaces node with a hole. Typing ':', '*', 'pi', 'lambda',... replaces holes with concrete nodes. (See 'class HoleFill').")
         f2KeyEv <- key (V.KFun 2)
 
         let saveCurrentEv :: Event t (MalaState -> MalaState)
             saveCurrentEv =
-              (\e st -> st {msCurrentSurfaceExpression = e}) <$> current termD `tag` leftmost [saveBtnEv, void f2KeyEv]
+              (\e st -> st {msCurrentSurfaceExpression = e}) <$> current termD `tag` void f2KeyEv
 
         let displayTerm :: Fix (Hole :+: SurfaceTerm) -> Text
             displayTerm tF = either id T.unlines $ runDesugarM $ do
